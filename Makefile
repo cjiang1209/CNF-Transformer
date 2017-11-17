@@ -35,24 +35,39 @@ profile: DIR = Profile/
 	$(CXX) $(CFLAGS) -c $< -o $(addprefix $(DIR),$@)
 	@echo ""
 
+lexer.o: lexer.cpp
+	@echo Compiling: $@
+	@mkdir -p $(DIR)
+	$(CXX) $(CFLAGS) -c $< -o $(addprefix $(DIR),$@)
+	@echo ""
+
+parser.o: parser.cpp
+	@echo Compiling: $@
+	@mkdir -p $(DIR)
+	$(CXX) $(CFLAGS) -c $< -o $(addprefix $(DIR),$@)
+	@echo ""
+
 lexer.cpp: lexer.l parser.cpp
 	@echo Lexer: $@
 	$(LEXER) -o $@ $<
+	@echo ""
 
 parser.cpp: parser.y
 	@echo Parser: $@
 	$(PARSER) -d -o $@ $<
+	@echo ""
 
 # Link
-$(EXEC): $(OBJS)
+$(EXEC): $(OBJS) lexer.o parser.o
 	@echo Linking $^
 	$(CXX) $(LFLAGS) $(addprefix $(DIR),$^) -o $(addprefix $(DIR),$@)
 	@echo ""
 
 # Clean
 clean:
-	rm -f *.o
-	rm -f parser.cpp
 	rm -f lexer.cpp
 	rm -f parser.hpp
-	rm -f $(EXEC)
+	rm -f parser.cpp
+	rm -f Release/*
+	rm -f Debug/*
+	rm -f Profile/*
