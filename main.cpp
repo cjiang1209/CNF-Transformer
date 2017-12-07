@@ -1,4 +1,5 @@
 #include <iostream>
+#include <fstream>
 #include <cassert>
 
 #include "base.h"
@@ -15,6 +16,7 @@ SymbolTable symbol_table;
 
 void print_clauses(ostream& out, ClauseSet& clauses)
 {
+	out << "p cnf " << symbol_table.num_vars() << " " << clauses.size() << "\n";
 	for (auto itr = clauses.begin(); itr != clauses.end(); itr++) {
 		bool first = true;
 		for (auto sitr = itr->begin(); sitr != itr->end(); sitr++) {
@@ -26,19 +28,19 @@ void print_clauses(ostream& out, ClauseSet& clauses)
 			}
 			out << *sitr;
 		}
-		out << endl;
+		out << " 0 \n";
 	}
 }
 
 int main(int argc, char* argv[])
 {
-	assert(argc == 2);
+	assert(argc >= 2);
 
 	yyin = fopen(argv[1], "r");
 	yyparse();
 
 	Formula* formula = parsed_formula;
-	cout << *formula << "\n" << endl;
+//	cout << *formula << "\n" << endl;
 
 	ClauseSet clauses;
 	formula->transform(clauses);
@@ -49,6 +51,15 @@ int main(int argc, char* argv[])
 	cout << endl;
 
 	symbol_table.print(cout);
+
+	if (argc >= 3) {
+		ofstream fout(argv[2]);
+		print_clauses(fout, clauses);
+	}
+	if (argc >= 4) {
+		ofstream fout(argv[3]);
+		symbol_table.print(fout);
+	}
 
 	return 0;
 }
