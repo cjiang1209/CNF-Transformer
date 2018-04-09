@@ -79,28 +79,29 @@ void UnaryFormula::transform(ClauseSet& clauses)
 			temp.push_back({negate(*itr)});
 		}
 	}
+	else {
+		// Tseitin transformation
+		// !((a \/ b) /\ c)
+		// Add additional variables
+		// x <=> (a \/ b)
+		// !(x /\ c)
+		Clause top;
+		for (auto itr = clauses.begin(); itr != clauses.end(); itr++) {
+			assert(!itr->empty());
 
-	// Tseitin transformation
-	// !((a \/ b) /\ c)
-	// Add additional variables
-	// x <=> (a \/ b)
-	// !(x /\ c)
-	Clause top;
-	for (auto itr = clauses.begin(); itr != clauses.end(); itr++) {
-		assert(!itr->empty());
+			if (itr->size() == 1) {
+				top.push_back(negate(itr->front()));
+			}
+			else {
+				Literal x = symbol_table.new_var();
 
-		if (itr->size() == 1) {
-			top.push_back(negate(itr->front()));
+				top.push_back(negate(x));
+
+				add_definition_clauses(temp, x, *itr);
+			}
 		}
-		else {
-			Literal x = symbol_table.new_var();
-
-			top.push_back(negate(x));
-
-			add_definition_clauses(temp, x, *itr);
-		}
+		temp.push_back(top);
 	}
-	temp.push_back(top);
 
 	clauses.swap(temp);
 }
@@ -219,7 +220,7 @@ void BinaryFormula::print(ostream& out) const
 }
 
 Atom::Atom(const char* name)
-	: Formula(OpType::OpVar), _name(name), _var(UNDEFINED)
+	: Formula(OpType::OpVar), _name(name)
 {
 }
 

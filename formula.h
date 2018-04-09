@@ -27,7 +27,7 @@ protected:
 
 	OpType _type;
 
-	static Literal negate(int Literal);
+	static Literal negate(Literal Literal);
 	static void add_definition_clauses(ClauseSet& clauses, Literal lit, Clause clause);
 
 	const char* OpName() const;
@@ -40,6 +40,7 @@ public:
 
 	OpType type() const;
 
+	// Transformed into conjunction normal form (a set of clauses)
 	virtual void transform(ClauseSet& clauses) = 0;
 
 	virtual void print(ostream& out) const = 0;
@@ -76,7 +77,6 @@ class Atom : public Formula
 {
 protected:
 	const string _name;
-	int _var;
 
 public:
 	Atom(const char* name);
