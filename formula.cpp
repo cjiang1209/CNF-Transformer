@@ -1,11 +1,13 @@
 #include "formula.h"
 
+#include <functional>
+
 #include "symbol_table.h"
 
 extern SymbolTable symbol_table;
 
 Formula::Formula(OpType type)
-	: _type(type)
+	: _type(type), _num_refs(1)
 {
 }
 
@@ -58,6 +60,21 @@ void Formula::add_definition_clauses(ClauseSet& clauses, Literal lit, Clause cla
 UnaryFormula::UnaryFormula(OpType type, Formula* op)
 	: Formula(type), _op(op)
 {
+}
+
+bool UnaryFormula::operator==(const Formula& formula) const
+{
+	const UnaryFormula* rhs = dynamic_cast<const UnaryFormula*>(&formula);
+	if (rhs == nullptr) {
+		return false;
+	}
+	return (this == rhs)
+			|| (_type == rhs->_type && _op == rhs->_op);
+}
+
+size_t UnaryFormula::hash() const
+{
+	return std::hash<size_t>{}(_type) ^ (std::hash<Formula*>{}(_op) << 1);
 }
 
 void UnaryFormula::transform(ClauseSet& clauses)
@@ -116,6 +133,21 @@ void UnaryFormula::print(ostream& out) const
 BinaryFormula::BinaryFormula(OpType type, Formula* op1, Formula* op2)
 	: Formula(type), _op1(op1), _op2(op2)
 {
+}
+
+bool BinaryFormula::operator==(const Formula& formula) const
+{
+	const BinaryFormula* rhs = dynamic_cast<const BinaryFormula*>(&formula);
+	if (rhs == nullptr) {
+		return false;
+	}
+	return (this == rhs)
+			|| (_type == rhs->_type && _op1 == rhs->_op1 && _op2 == rhs->_op2);
+}
+
+size_t BinaryFormula::hash() const
+{
+	return std::hash<size_t>{}(_type) ^ (std::hash<Formula*>{}(_op1) << 1) ^ (std::hash<Formula*>{}(_op2) << 2);
 }
 
 void BinaryFormula::transform(ClauseSet& clauses)
@@ -224,6 +256,20 @@ Atom::Atom(const char* name)
 {
 }
 
+bool Atom::operator==(const Formula& formula) const
+{
+	const Atom* rhs = dynamic_cast<const Atom*>(&formula);
+	if (rhs == nullptr) {
+		return false;
+	}
+	return (this == rhs) || (_name == rhs->_name);
+}
+
+size_t Atom::hash() const
+{
+	return std::hash<size_t>{}(_type) ^ (std::hash<string>{}(_name) << 1);
+}
+
 void Atom::transform(ClauseSet& clauses)
 {
 	clauses.push_back({symbol_table.add_symbol(_name)});
@@ -232,4 +278,71 @@ void Atom::transform(ClauseSet& clauses)
 void Atom::print(ostream& out) const
 {
 	out << _name;
+}
+
+unordered_set<Formula*, FormulaHasher, FormulaEqual> FormulaFactory::_subformulas;
+
+Formula* FormulaFactory::createAtom(const char* name)
+{
+	Formula* formula = new Atom(name);
+	auto search = _subformulas.find(formula);
+	if (search == _subformulas.end()) {
+		_subformulas.insert(formula);
+	}
+	else {
+		formula->release_ref();
+		formula = *search;
+		formula->add_ref();
+	}
+	return formula;
+}
+
+Formula* FormulaFactory::createNot(Formula* op)
+{
+	Formula* formula = new UnaryFormula(OpType::OpNot, op);
+	auto search = _subformulas.find(formula);
+	if (search == _subformulas.end()) {
+		_subformulas.insert(formula);
+	}
+	else {
+		formula->release_ref();
+		formula = *search;
+		formula->add_ref();
+	}
+	return formula;
+}
+
+Formula* FormulaFactory::createBinaryFormula(OpType type, Formula* op1, Formula* op2)
+{
+	Formula* formula = new BinaryFormula(type, op1, op2);
+	auto search = _subformulas.find(formula);
+	if (search == _subformulas.end()) {
+		_subformulas.insert(formula);
+	}
+	else {
+		formula->release_ref();
+		formula = *search;
+		formula->add_ref();
+	}
+	return formula;
+}
+
+Formula* FormulaFactory::createAnd(Formula* op1, Formula* op2)
+{
+	createBinaryFormula(OpType::OpAnd, op1, op2);
+}
+
+Formula* FormulaFactory::createOr(Formula* op1, Formula* op2)
+{
+	createBinaryFormula(OpType::OpOr, op1, op2);
+}
+
+Formula* FormulaFactory::createImp(Formula* op1, Formula* op2)
+{
+	createBinaryFormula(OpType::OpImp, op1, op2);
+}
+
+Formula* FormulaFactory::createIff(Formula* op1, Formula* op2)
+{
+	createBinaryFormula(OpType::OpIff, op1, op2);
 }

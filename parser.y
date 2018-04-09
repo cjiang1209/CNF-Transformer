@@ -42,23 +42,23 @@ input
 formula
   : formula IFF formula
   {
-    $$ = new BinaryFormula(OpType::OpIff, $1, $3);
+    $$ = FormulaFactory::createIff($1, $3);
   }
   | formula IMP formula
   {
-    $$ = new BinaryFormula(OpType::OpImp, $1, $3);
+    $$ = FormulaFactory::createImp($1, $3);
   }
   | formula OR formula
   {
-    $$ = new BinaryFormula(OpType::OpOr, $1, $3);
+    $$ = FormulaFactory::createOr($1, $3);
   }
   | formula AND formula
   {
-    $$ = new BinaryFormula(OpType::OpAnd, $1, $3);
+    $$ = FormulaFactory::createAnd($1, $3);
   }
   | NOT formula
   {
-    $$ = new UnaryFormula(OpType::OpNot, $2);
+    $$ = FormulaFactory::createNot($2);
   }
   | '(' formula ')'
   {
@@ -66,7 +66,7 @@ formula
   }
   | VAR
   {
-    $$ = new Atom($1);
+    $$ = FormulaFactory::createAtom($1);
   }
   ;
 
