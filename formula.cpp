@@ -42,24 +42,14 @@ ostream& operator<<(ostream& out, const Formula& formula)
 	return out;
 }
 
-void Formula::add_definition_clauses(ClauseSet& clauses, Literal lit, Clause clause)
-{
-	// a <=> (b \/ c)
-	// -a \/ b \/ c
-	// a \/ -b
-	// a \/ -c
-
-	clauses.push_back(clause);
-	clauses.back().push_back(negate(lit));
-
-	for (auto itr = clause.begin(); itr != clause.end(); itr++) {
-		clauses.push_back({negate(*itr), lit});
-	}
-}
-
 UnaryFormula::UnaryFormula(OpType type, Formula* op)
 	: Formula(type), _op(op)
 {
+}
+
+UnaryFormula::~UnaryFormula()
+{
+	_op->release_ref();
 }
 
 bool UnaryFormula::operator==(const Formula& formula) const
@@ -77,50 +67,13 @@ size_t UnaryFormula::hash() const
 	return std::hash<size_t>{}(_type) ^ (std::hash<Formula*>{}(_op) << 1);
 }
 
-void UnaryFormula::transform(ClauseSet& clauses)
+Literal UnaryFormula::transform(ClauseSet& clauses)
 {
-	_op->transform(clauses);
-
 	if (_type != OpType::OpNot) {
 		exit(-1);
 	}
 
-	assert(!clauses.empty());
-
-	ClauseSet temp;
-	if (clauses.size() == 1) {
-		// Only one clause
-		Clause& clause = clauses.front();
-		temp.reserve(clause.size());
-		for (auto itr = clause.begin(); itr != clause.end(); itr++) {
-			temp.push_back({negate(*itr)});
-		}
-	}
-	else {
-		// Tseitin transformation
-		// !((a \/ b) /\ c)
-		// Add additional variables
-		// x <=> (a \/ b)
-		// !(x /\ c)
-		Clause top;
-		for (auto itr = clauses.begin(); itr != clauses.end(); itr++) {
-			assert(!itr->empty());
-
-			if (itr->size() == 1) {
-				top.push_back(negate(itr->front()));
-			}
-			else {
-				Literal x = symbol_table.new_var();
-
-				top.push_back(negate(x));
-
-				add_definition_clauses(temp, x, *itr);
-			}
-		}
-		temp.push_back(top);
-	}
-
-	clauses.swap(temp);
+	return negate(_op->transform(clauses));
 }
 
 void UnaryFormula::print(ostream& out) const
@@ -131,8 +84,14 @@ void UnaryFormula::print(ostream& out) const
 }
 
 BinaryFormula::BinaryFormula(OpType type, Formula* op1, Formula* op2)
-	: Formula(type), _op1(op1), _op2(op2)
+	: Formula(type), _op1(op1), _op2(op2), _cache(UNDEFINED)
 {
+}
+
+BinaryFormula::~BinaryFormula()
+{
+	_op1->release_ref();
+	_op2->release_ref();
 }
 
 bool BinaryFormula::operator==(const Formula& formula) const
@@ -150,96 +109,33 @@ size_t BinaryFormula::hash() const
 	return std::hash<size_t>{}(_type) ^ (std::hash<Formula*>{}(_op1) << 1) ^ (std::hash<Formula*>{}(_op2) << 2);
 }
 
-void BinaryFormula::transform(ClauseSet& clauses)
+Literal BinaryFormula::transform(ClauseSet& clauses)
 {
-	_op1->transform(clauses);
-	ClauseSet clauses1;
-	clauses1.swap(clauses);
-	assert(!clauses1.empty());
+	if (_cache != UNDEFINED) {
+		return _cache;
+	}
 
-	_op2->transform(clauses);
-	ClauseSet clauses2;
-	clauses2.swap(clauses);
-	assert(!clauses2.empty());
+	Literal lit1 = _op1->transform(clauses);
+	Literal lit2 = _op2->transform(clauses);
+
+	_cache = symbol_table.new_var();
 
 	if (_type == OpType::OpAnd) {
-		clauses.swap(clauses1);
-		clauses.insert(clauses.end(), clauses2.begin(), clauses2.end());
+		clauses.push_back({negate(_cache), lit1});
+		clauses.push_back({negate(_cache), lit2});
 	}
 	else if (_type == OpType::OpOr) {
-		// Whether one operand has one unit clause only
-		bool one_unit = false;
-		if (clauses1.size() == 1 && clauses1.front().size() == 1) {
-			one_unit = true;
-		}
-		else if (clauses2.size() == 1 && clauses2.front().size() == 1) {
-			clauses1.swap(clauses2);
-			one_unit = true;
-		}
-
-		if (one_unit) {
-			Literal lit = clauses1.front().front();
-			for (auto itr = clauses2.begin(); itr != clauses2.end(); itr++) {
-				itr->push_back(lit);
-			}
-			clauses.swap(clauses2);
-		}
-		else {
-			// a \/ b
-			// Add a switching variable
-			// (x => a) /\ (-x => b)
-			// (-x \/ a) /\ (x \/ b)
-			Literal x = symbol_table.new_var();
-			for (auto itr = clauses1.begin(); itr != clauses1.end(); itr++) {
-				clauses.push_back(*itr);
-				clauses.back().push_back(negate(x));
-			}
-			for (auto itr = clauses2.begin(); itr != clauses2.end(); itr++) {
-				clauses.push_back(*itr);
-				clauses.back().push_back(x);
-			}
-		}
+		clauses.push_back({negate(_cache), lit1, lit2});
 	}
 	else if (_type == OpType::OpImp) {
-		if (clauses1.size() == 1 && clauses1.front().size() == 1) {
-			// a => (b /\ c)
-			// (-a \/ b) /\ (-a \/ c)
-			Literal lit = clauses1.front().front();
-			clauses.swap(clauses2);
-			for (auto itr = clauses.begin(); itr != clauses.end(); itr++) {
-				itr->push_back(negate(lit));
-			}
-		}
-		else {
-			cerr << "Not supported yet" << endl;
-			exit(-1);
-		}
+		clauses.push_back({negate(_cache), negate(lit1), lit2});
 	}
 	else if (_type == OpType::OpIff) {
-		// Whether one operand has one unit clause only
-		bool one_unit = false;
-		if (clauses1.size() == 1 && clauses1.front().size() == 1) {
-			one_unit = true;
-		}
-		else if (clauses2.size() == 1 && clauses2.front().size() == 1) {
-			clauses1.swap(clauses2);
-			one_unit = true;
-		}
-
-		if (one_unit) {
-			if (clauses2.size() == 1) {
-				add_definition_clauses(clauses, clauses1.front().front(), clauses2.front());
-			}
-			else {
-				cerr << "Not supported yet" << endl;
-				exit(-1);
-			}
-		}
-		else {
-			cerr << "Not supported yet" << endl;
-			exit(-1);
-		}
+		clauses.push_back({negate(_cache), negate(lit1), lit2});
+		clauses.push_back({negate(_cache), lit1, negate(lit2)});
 	}
+
+	return _cache;
 }
 
 void BinaryFormula::print(ostream& out) const
@@ -270,9 +166,9 @@ size_t Atom::hash() const
 	return std::hash<size_t>{}(_type) ^ (std::hash<string>{}(_name) << 1);
 }
 
-void Atom::transform(ClauseSet& clauses)
+Literal Atom::transform(ClauseSet& clauses)
 {
-	clauses.push_back({symbol_table.add_symbol(_name)});
+	return symbol_table.add_symbol(_name);
 }
 
 void Atom::print(ostream& out) const
@@ -329,20 +225,20 @@ Formula* FormulaFactory::createBinaryFormula(OpType type, Formula* op1, Formula*
 
 Formula* FormulaFactory::createAnd(Formula* op1, Formula* op2)
 {
-	createBinaryFormula(OpType::OpAnd, op1, op2);
+	return createBinaryFormula(OpType::OpAnd, op1, op2);
 }
 
 Formula* FormulaFactory::createOr(Formula* op1, Formula* op2)
 {
-	createBinaryFormula(OpType::OpOr, op1, op2);
+	return createBinaryFormula(OpType::OpOr, op1, op2);
 }
 
 Formula* FormulaFactory::createImp(Formula* op1, Formula* op2)
 {
-	createBinaryFormula(OpType::OpImp, op1, op2);
+	return createBinaryFormula(OpType::OpImp, op1, op2);
 }
 
 Formula* FormulaFactory::createIff(Formula* op1, Formula* op2)
 {
-	createBinaryFormula(OpType::OpIff, op1, op2);
+	return createBinaryFormula(OpType::OpIff, op1, op2);
 }

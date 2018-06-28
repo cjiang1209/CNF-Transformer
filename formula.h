@@ -31,7 +31,6 @@ protected:
 	int _num_refs;
 
 	static Literal negate(Literal Literal);
-	static void add_definition_clauses(ClauseSet& clauses, Literal lit, Clause clause);
 
 	const char* OpName() const;
 
@@ -45,10 +44,11 @@ public:
 	OpType type() const;
 	void add_ref();
 	void release_ref();
+	int numRefs() const;
 	virtual size_t hash() const = 0;
 
 	// Transformed into conjunction normal form (a set of clauses)
-	virtual void transform(ClauseSet& clauses) = 0;
+	virtual Literal transform(ClauseSet& clauses) = 0;
 
 	virtual void print(ostream& out) const = 0;
 };
@@ -60,14 +60,15 @@ protected:
 
 public:
 	UnaryFormula(OpType type, Formula* op);
+	~UnaryFormula();
 
-	virtual bool operator==(const Formula& formula) const;
+	virtual bool operator==(const Formula& formula) const override;
 
-	virtual size_t hash() const;
+	virtual size_t hash() const override;
 
-	virtual void transform(ClauseSet& clauses);
+	virtual Literal transform(ClauseSet& clauses) override;
 
-	virtual void print(ostream& out) const;
+	virtual void print(ostream& out) const override;
 };
 
 class BinaryFormula : public Formula
@@ -76,16 +77,19 @@ protected:
 	Formula* _op1;
 	Formula* _op2;
 
+	Literal _cache;
+
 public:
 	BinaryFormula(OpType type, Formula* op1, Formula* op2);
+	~BinaryFormula();
 
-	virtual bool operator==(const Formula& formula) const;
+	virtual bool operator==(const Formula& formula) const override;
 
-	virtual size_t hash() const;
+	virtual size_t hash() const override;
 
-	virtual void transform(ClauseSet& clauses);
+	virtual Literal transform(ClauseSet& clauses) override;
 
-	virtual void print(ostream& out) const;
+	virtual void print(ostream& out) const override;
 };
 
 class Atom : public Formula
@@ -96,13 +100,13 @@ protected:
 public:
 	Atom(const char* name);
 
-	virtual bool operator==(const Formula& formula) const;
+	virtual bool operator==(const Formula& formula) const override;
 
-	virtual size_t hash() const;
+	virtual size_t hash() const override;
 
-	virtual void transform(ClauseSet& clauses);
+	virtual Literal transform(ClauseSet& clauses) override;
 
-	virtual void print(ostream& out) const;
+	virtual void print(ostream& out) const override;
 };
 
 struct FormulaHasher
@@ -163,6 +167,11 @@ inline void Formula::release_ref()
 	if (_num_refs == 0) {
 		delete this;
 	}
+}
+
+inline int Formula::numRefs() const
+{
+	return _num_refs;
 }
 
 inline void FormulaFactory::clear()

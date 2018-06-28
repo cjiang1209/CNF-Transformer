@@ -28,7 +28,7 @@ void print_clauses(ostream& out, ClauseSet& clauses)
 			}
 			out << *sitr;
 		}
-		out << " 0 \n";
+		out << " 0\n";
 	}
 }
 
@@ -43,14 +43,14 @@ int main(int argc, char* argv[])
 //	cout << *formula << "\n" << endl;
 
 	ClauseSet clauses;
-	formula->transform(clauses);
+	Literal lit = formula->transform(clauses);
+	clauses.push_back({lit});
 
+	cout << "#Subformulas: " << FormulaFactory::numSubformulas() << endl;
 	cout << "#Variables: " << symbol_table.num_vars() << endl;
 	cout << "#Clauses: " << clauses.size() << endl;
 	print_clauses(cout, clauses);
 	cout << endl;
-
-	symbol_table.print(cout);
 
 	if (argc >= 3) {
 		ofstream fout(argv[2]);

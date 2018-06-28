@@ -7,7 +7,7 @@ CXX = g++
 CFLAGS = -Wall
 CFLAGS = -Wall
 
-#COPTIMIZE = -O3
+COPTIMIZE = -O3
 
 LEXER = flex
 PARSER = bison
