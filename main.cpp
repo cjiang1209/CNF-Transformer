@@ -41,6 +41,10 @@ int main(int argc, char* argv[])
 
 	Formula* formula = parsed_formula;
 //	cout << *formula << "\n" << endl;
+	vector<Formula*> flat;
+	formula->flatten(OpType::OpNone, flat);
+	formula->release_ref();
+	formula = flat.front();
 
 	ClauseSet clauses;
 	Literal lit = formula->transform(clauses);

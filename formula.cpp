@@ -31,7 +31,7 @@ const char* Formula::OpName() const
 	case OpType::OpIff:
 		return "<=>";
 	default:
-		cerr << "Unsupported operator" << endl;
+		cerr << "ERROR: Unsupported operator." << endl;
 		exit(-1);
 	}
 }
@@ -43,7 +43,7 @@ ostream& operator<<(ostream& out, const Formula& formula)
 }
 
 UnaryFormula::UnaryFormula(OpType type, Formula* op)
-	: Formula(type), _op(op)
+	: Formula(type), _op(op), _flat(nullptr)
 {
 }
 
@@ -67,6 +67,23 @@ size_t UnaryFormula::hash() const
 	return std::hash<size_t>{}(_type) ^ (std::hash<Formula*>{}(_op) << 1);
 }
 
+void UnaryFormula::flatten(OpType parent_type, vector<Formula*>& ops)
+{
+	if (_flat != nullptr) {
+		_flat->add_ref();
+		return ops.push_back(_flat);
+	}
+
+	vector<Formula*> ops1;
+	_op->flatten(_type, ops1);
+	assert(ops1.size() == 1);
+	_op->release_ref();
+	_op = ops1.front();
+	_flat = this;
+	_flat->add_ref();
+	ops.push_back(_flat);
+}
+
 Literal UnaryFormula::transform(ClauseSet& clauses)
 {
 	if (_type != OpType::OpNot) {
@@ -84,7 +101,7 @@ void UnaryFormula::print(ostream& out) const
 }
 
 BinaryFormula::BinaryFormula(OpType type, Formula* op1, Formula* op2)
-	: Formula(type), _op1(op1), _op2(op2), _cache(UNDEFINED)
+	: Formula(type), _op1(op1), _op2(op2), _flat(nullptr), _cache(UNDEFINED)
 {
 }
 
@@ -107,6 +124,54 @@ bool BinaryFormula::operator==(const Formula& formula) const
 size_t BinaryFormula::hash() const
 {
 	return std::hash<size_t>{}(_type) ^ (std::hash<Formula*>{}(_op1) << 1) ^ (std::hash<Formula*>{}(_op2) << 2);
+}
+
+//
+// Before:
+//      &
+//     / \
+//    &   c
+//   / \
+//  a   b
+//
+// After:
+//      &
+//     /|\
+//    a b c
+//
+void BinaryFormula::flatten(OpType parent_type, vector<Formula*>& ops)
+{
+	if (_flat != nullptr) {
+		// The formula has been flattened
+		_flat->add_ref();
+		ops.push_back(_flat);
+		return;
+	}
+
+	if ((_type == OpType::OpAnd || _type == OpType::OpOr) && _type == parent_type && _num_refs == 1) {
+		// The subformula occurs only once
+		// Continue to push operands up
+		_op1->flatten(_type, ops);
+		_op2->flatten(_type, ops);
+		return;
+	}
+
+	vector<Formula*> ops1;
+	_op1->flatten(_type, ops1);
+	_op2->flatten(_type, ops1);
+	if (ops1.size() == 2) {
+		// In-place update
+		_op1->release_ref();
+		_op1 = ops1[0];
+		_op2->release_ref();
+		_op2 = ops1[1];
+		_flat = this;
+		_flat->add_ref();
+	}
+	else {
+		_flat = FormulaFactory::createNaryFormula(_type, ops1);
+	}
+	ops.push_back(_flat);
 }
 
 Literal BinaryFormula::transform(ClauseSet& clauses)
@@ -166,6 +231,12 @@ size_t Atom::hash() const
 	return std::hash<size_t>{}(_type) ^ (std::hash<string>{}(_name) << 1);
 }
 
+void Atom::flatten(OpType parent_type, vector<Formula*>& ops)
+{
+	add_ref();
+	ops.push_back(this);
+}
+
 Literal Atom::transform(ClauseSet& clauses)
 {
 	return symbol_table.add_symbol(_name);
@@ -174,6 +245,96 @@ Literal Atom::transform(ClauseSet& clauses)
 void Atom::print(ostream& out) const
 {
 	out << _name;
+}
+
+NaryFormula::NaryFormula(OpType type, const vector<Formula*>& ops)
+	: Formula(type), _ops(ops), _cache(UNDEFINED)
+{
+	if (_type != OpType::OpAnd && _type != OpType::OpOr) {
+		cerr << "ERROR: Unsupported operator " << OpName() << " in N-ary formulas." << endl;
+		exit(-1);
+	}
+	if (ops.size() <= 2) {
+		cerr << "ERROR: N-ary formulas require more than two operands." << endl;
+		exit(-1);
+	}
+}
+
+NaryFormula::~NaryFormula()
+{
+	for (Formula* op : _ops) {
+		op->release_ref();
+	}
+}
+
+bool NaryFormula::operator==(const Formula& formula) const
+{
+	const NaryFormula* rhs = dynamic_cast<const NaryFormula*>(&formula);
+	if (rhs == nullptr || _type == rhs->_type || _ops.size() != rhs->_ops.size()) {
+		return false;
+	}
+	if (this != rhs) {
+		for (int i = 0; i < _ops.size(); i++) {
+			if (_ops[i] != rhs->_ops[i]) {
+				return false;
+			}
+		}
+	}
+	return true;
+}
+
+size_t NaryFormula::hash() const
+{
+	size_t h = std::hash<size_t>{}(_type);
+	for (int i = 0; i < _ops.size(); i++) {
+		h ^= (std::hash<Formula*>{}(_ops[i]) << ((i + 1) % (sizeof(size_t) * 8)));
+	}
+	return h;
+}
+
+void NaryFormula::flatten(OpType parent_type, vector<Formula*>& ops)
+{
+	// A n-ary formula is always flat
+	add_ref();
+	ops.push_back(this);
+}
+
+Literal NaryFormula::transform(ClauseSet& clauses)
+{
+	if (_cache != UNDEFINED) {
+		return _cache;
+	}
+
+	vector<Literal> lits;
+	for (Formula* op : _ops) {
+		lits.push_back(op->transform(clauses));
+	}
+
+	_cache = symbol_table.new_var();
+
+	if (_type == OpType::OpAnd) {
+		for (Literal& lit : lits) {
+			clauses.push_back({negate(_cache), lit});
+		}
+	}
+	else if (_type == OpType::OpOr) {
+		lits.push_back(negate(_cache));
+		clauses.push_back(lits);
+	}
+
+	return _cache;
+}
+
+void NaryFormula::print(ostream& out) const
+{
+	out << "(";
+	for (int i = 0; i < _ops.size(); i++) {
+		if (i > 0) {
+			out << " " << OpName() << " ";
+		}
+		_ops[i]->print(out);
+	}
+	out << ")";
 }
 
 unordered_set<Formula*, FormulaHasher, FormulaEqual> FormulaFactory::_subformulas;
@@ -241,4 +402,9 @@ Formula* FormulaFactory::createImp(Formula* op1, Formula* op2)
 Formula* FormulaFactory::createIff(Formula* op1, Formula* op2)
 {
 	return createBinaryFormula(OpType::OpIff, op1, op2);
+}
+
+Formula* FormulaFactory::createNaryFormula(OpType type, const vector<Formula*>& ops)
+{
+	return new NaryFormula(type, ops);
 }

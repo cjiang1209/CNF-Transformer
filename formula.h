@@ -13,6 +13,7 @@ using namespace std;
 
 enum OpType
 {
+	OpNone,
 	OpVar,
 	OpNot,
 	OpAnd,
@@ -47,6 +48,7 @@ public:
 	int numRefs() const;
 	virtual size_t hash() const = 0;
 
+	virtual void flatten(OpType parent_type, vector<Formula*>& ops) = 0;
 	// Transformed into conjunction normal form (a set of clauses)
 	virtual Literal transform(ClauseSet& clauses) = 0;
 
@@ -58,6 +60,8 @@ class UnaryFormula : public Formula
 protected:
 	Formula* _op;
 
+	Formula* _flat;
+
 public:
 	UnaryFormula(OpType type, Formula* op);
 	~UnaryFormula();
@@ -66,6 +70,7 @@ public:
 
 	virtual size_t hash() const override;
 
+	virtual void flatten(OpType parent_type, vector<Formula*>& ops) override;
 	virtual Literal transform(ClauseSet& clauses) override;
 
 	virtual void print(ostream& out) const override;
@@ -77,6 +82,7 @@ protected:
 	Formula* _op1;
 	Formula* _op2;
 
+	Formula* _flat;
 	Literal _cache;
 
 public:
@@ -87,6 +93,7 @@ public:
 
 	virtual size_t hash() const override;
 
+	virtual void flatten(OpType parent_type, vector<Formula*>& ops) override;
 	virtual Literal transform(ClauseSet& clauses) override;
 
 	virtual void print(ostream& out) const override;
@@ -104,6 +111,28 @@ public:
 
 	virtual size_t hash() const override;
 
+	virtual void flatten(OpType parent_type, vector<Formula*>& ops) override;
+	virtual Literal transform(ClauseSet& clauses) override;
+
+	virtual void print(ostream& out) const override;
+};
+
+class NaryFormula : public Formula
+{
+protected:
+	vector<Formula*> _ops;
+
+	Literal _cache;
+
+public:
+	NaryFormula(OpType type, const vector<Formula*>& ops);
+	~NaryFormula();
+
+	virtual bool operator==(const Formula& formula) const override;
+
+	virtual size_t hash() const override;
+
+	virtual void flatten(OpType parent_type, vector<Formula*>& ops);
 	virtual Literal transform(ClauseSet& clauses) override;
 
 	virtual void print(ostream& out) const override;
@@ -139,6 +168,7 @@ public:
 	static Formula* createOr(Formula* op1, Formula* op2);
 	static Formula* createImp(Formula* op1, Formula* op2);
 	static Formula* createIff(Formula* op1, Formula* op2);
+	static Formula* createNaryFormula(OpType type, const vector<Formula*>& ops);
 
 	static void clear();
 
